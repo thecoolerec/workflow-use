@@ -17,6 +17,7 @@ from workflow_use.builder.service import BuilderService
 from workflow_use.controller.service import WorkflowController
 from workflow_use.healing.service import HealingService
 from workflow_use.mcp.service import get_mcp_server
+from workflow_use.llm.factory import create_chat_model
 from workflow_use.recorder.service import RecordingService  # Added import
 from workflow_use.storage.service import WorkflowStorageService
 from workflow_use.workflow.service import Workflow
@@ -31,26 +32,37 @@ app = typer.Typer(
 	no_args_is_help=True,
 )
 
-# Default LLM instance to None
-llm_instance: BaseChatModel
-try:
-	llm_instance = ChatBrowserUse(model='bu-latest')
-	page_extraction_llm = ChatBrowserUse(model='bu-latest')
-except Exception as e:
-	typer.secho(f'Error initializing LLM: {e}. Would you like to set your BROWSER_USE_API_KEY?', fg=typer.colors.RED)
-	set_browser_use_api_key = input('Set BROWSER_USE_API_KEY? (y/n): ')
-	if set_browser_use_api_key.lower() == 'y':
-		os.environ['BROWSER_USE_API_KEY'] = input('Enter your BROWSER_USE_API_KEY: ')
+# LLMs are initialized lazily so deterministic/no-AI commands never touch an API provider.
+llm_instance: BaseChatModel | None = None
+page_extraction_llm: BaseChatModel | None = None
+builder_service: BuilderService | None = None
+
+# recorder_service = RecorderService() # Placeholder
+recording_service = RecordingService()
+storage_service = WorkflowStorageService()
+
+
+def _get_default_llms() -> tuple[BaseChatModel, BaseChatModel]:
+	"""Initialize the legacy Browser Use Cloud models only when a command needs them."""
+	global llm_instance, page_extraction_llm
+
+	if llm_instance is None:
 		llm_instance = ChatBrowserUse(model='bu-latest')
+	if page_extraction_llm is None:
 		page_extraction_llm = ChatBrowserUse(model='bu-latest')
 
-builder_service = BuilderService(llm=llm_instance) if llm_instance else None
-# recorder_service = RecorderService() # Placeholder
-recording_service = (
-	RecordingService()
-)  # Assuming RecordingService does not need LLM, or handle its potential None state if it does.
-healing_service = HealingService(llm=llm_instance) if llm_instance else None
-storage_service = WorkflowStorageService()
+	return llm_instance, page_extraction_llm
+
+
+def _get_builder_service() -> BuilderService:
+	"""Initialize BuilderService lazily so no-AI commands stay provider-free."""
+	global builder_service
+
+	if builder_service is None:
+		default_llm, _ = _get_default_llms()
+		builder_service = BuilderService(llm=default_llm)
+
+	return builder_service
 
 
 def get_default_save_dir() -> Path:
@@ -68,11 +80,10 @@ def _build_and_save_workflow_from_recording(
 	is_temp_recording: bool = False,  # To adjust messages if it's from a live recording
 ) -> Path | None:
 	"""Builds a workflow from a recording file, prompts for details, and saves it."""
-	if not builder_service:
-		typer.secho(
-			'BuilderService not initialized. Cannot build workflow.',
-			fg=typer.colors.RED,
-		)
+	try:
+		builder_service = _get_builder_service()
+	except Exception as e:
+		typer.secho(f'BuilderService LLM initialization failed: {e}', fg=typer.colors.RED)
 		return None
 
 	prompt_subject = 'recorded' if is_temp_recording else 'provided'
@@ -1139,11 +1150,10 @@ def run_as_tool_command(
 	"""
 	Run the workflow and automatically parse the required variables from the input/prompt that the user provides.
 	"""
-	if not llm_instance:
-		typer.secho(
-			'LLM not initialized. Please check your OpenAI API key. Cannot run as tool.',
-			fg=typer.colors.RED,
-		)
+	try:
+		llm_instance, page_extraction_llm = _get_default_llms()
+	except Exception as e:
+		typer.secho(f'LLM initialization failed: {e}', fg=typer.colors.RED)
 		raise typer.Exit(code=1)
 
 	typer.echo(
@@ -1196,6 +1206,12 @@ def run_workflow_command(
 	"""
 
 	async def _run_workflow():
+		try:
+			llm_instance, page_extraction_llm = _get_default_llms()
+		except Exception as e:
+			typer.secho(f'LLM initialization failed: {e}', fg=typer.colors.RED)
+			raise typer.Exit(code=1)
+
 		typer.echo(
 			typer.style(f'Loading workflow from: {typer.style(str(workflow_path.resolve()), fg=typer.colors.MAGENTA)}', bold=True)
 		)
