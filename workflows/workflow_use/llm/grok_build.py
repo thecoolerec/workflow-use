@@ -9,13 +9,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, TypeVar, overload
 
-from pydantic import BaseModel
-
 from browser_use.llm.base import BaseChatModel
 from browser_use.llm.exceptions import ModelProviderError
 from browser_use.llm.messages import AssistantMessage, BaseMessage
 from browser_use.llm.schema import SchemaOptimizer
 from browser_use.llm.views import ChatInvokeCompletion, ChatInvokeUsage
+from pydantic import BaseModel
 
 T = TypeVar('T', bound=BaseModel)
 
