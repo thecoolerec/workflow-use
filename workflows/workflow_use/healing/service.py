@@ -356,6 +356,7 @@ class HealingService:
 
 		# Convert history to steps deterministically
 		steps = self.deterministic_converter.convert_history_to_steps(history_list)
+		steps = self.deterministic_converter.ensure_terminal_extract(steps, task)
 
 		# Transfer element objects from deterministic converter to healing service's map
 		# This allows _populate_selector_fields to populate cssSelector
