@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-
-import aiofiles
 import json
 import os
 import shutil
@@ -11,6 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, TypeVar, overload
 
+import aiofiles
 from browser_use.llm.base import BaseChatModel
 from browser_use.llm.exceptions import ModelProviderError
 from browser_use.llm.messages import AssistantMessage, BaseMessage
