@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+
+import aiofiles
 import json
 import os
 import shutil
@@ -166,8 +168,8 @@ class ChatGrokBuild(BaseChatModel):
 				# Windows has a finite process command-line limit. Large Browser Use
 				# action schemas are moved into the prompt file instead of argv.
 				if os.name == 'nt' and len(schema_json) > 24000:
-					with prompt_path.open('a', encoding='utf-8') as prompt_file:
-						prompt_file.write(
+					async with aiofiles.open(prompt_path, 'a', encoding='utf-8') as prompt_file:
+						await prompt_file.write(
 							'\\n\\nReturn ONLY a JSON object that validates against this JSON Schema:\\n'
 							+ schema_json
 						)
