@@ -77,6 +77,12 @@ The first Grok Build adapter intentionally runs Browser Use in DOM-only mode
 (no screenshots) and uses Grok Build's `--json-schema` structured output support.
 If your Grok Build version does not support `--json-schema`, update Grok Build.
 
+> **Current extraction limitation:** `run-workflow-no-ai` itself makes no LLM
+> calls, but the upstream deterministic executor does not yet compile semantic
+> `ExtractStep` goals into field selectors. Without `--enable-extraction`, an
+> extract step falls back to raw/basic page text. Compiling learned extraction
+> rules into deterministic selectors is a separate follow-up.
+
 ---
 
 ## Key Features
