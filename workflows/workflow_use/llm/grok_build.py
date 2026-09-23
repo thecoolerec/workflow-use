@@ -14,6 +14,7 @@ from pydantic import BaseModel
 from browser_use.llm.base import BaseChatModel
 from browser_use.llm.exceptions import ModelProviderError
 from browser_use.llm.messages import AssistantMessage, BaseMessage
+from browser_use.llm.schema import SchemaOptimizer
 from browser_use.llm.views import ChatInvokeCompletion, ChatInvokeUsage
 
 T = TypeVar('T', bound=BaseModel)
@@ -32,6 +33,7 @@ class ChatGrokBuild(BaseChatModel):
 	cwd: str | Path | None = None
 	max_turns: int = 1
 	reasoning_effort: str | None = None
+	timeout_seconds: float = 180.0
 
 	_verified_api_keys: bool = True
 	supports_vision: bool = False
@@ -155,7 +157,18 @@ class ChatGrokBuild(BaseChatModel):
 			if self.reasoning_effort:
 				cmd.extend(['--reasoning-effort', self.reasoning_effort])
 			if schema is not None:
-				cmd.extend(['--json-schema', json.dumps(schema, ensure_ascii=False, separators=(',', ':'))])
+				schema_json = json.dumps(schema, ensure_ascii=False, separators=(',', ':'))
+				# Windows has a finite process command-line limit. Large Browser Use
+				# action schemas are moved into the prompt file instead of argv.
+				if os.name == 'nt' and len(schema_json) > 24000:
+					with prompt_path.open('a', encoding='utf-8') as prompt_file:
+						prompt_file.write(
+							'\\n\\nReturn ONLY a JSON object that validates against this JSON Schema:\\n'
+							+ schema_json
+						)
+					schema = None
+				else:
+					cmd.extend(['--json-schema', schema_json])
 
 			env = os.environ.copy()
 			env['GROK_DISABLE_AUTOUPDATER'] = '1'
@@ -168,7 +181,15 @@ class ChatGrokBuild(BaseChatModel):
 				stdout=asyncio.subprocess.PIPE,
 				stderr=asyncio.subprocess.PIPE,
 			)
-			stdout, stderr = await process.communicate()
+			try:
+				stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=self.timeout_seconds)
+			except TimeoutError as exc:
+				process.kill()
+				await process.communicate()
+				raise ModelProviderError(
+					message=f'Grok Build timed out after {self.timeout_seconds:g}s.',
+					model=self.name,
+				) from exc
 
 			stdout_text = stdout.decode('utf-8', errors='replace').strip()
 			stderr_text = stderr.decode('utf-8', errors='replace').strip()
@@ -217,7 +238,11 @@ class ChatGrokBuild(BaseChatModel):
 		**kwargs: Any,
 	) -> ChatInvokeCompletion[T] | ChatInvokeCompletion[str]:
 		prompt = self._build_prompt(messages)
-		schema = output_format.model_json_schema() if output_format is not None else None
+		schema = (
+			SchemaOptimizer.create_optimized_json_schema(output_format)
+			if output_format is not None
+			else None
+		)
 		data = await self._invoke_cli(prompt, schema)
 		usage = self._usage_from_result(data)
 		stop_reason = data.get('stopReason') or data.get('stop_reason')
