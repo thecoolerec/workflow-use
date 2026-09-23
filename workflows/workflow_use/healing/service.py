@@ -822,7 +822,7 @@ This structured format is critical for generating a reusable workflow."""
 				self.selector_generator, on_step_recorded=on_step_recorded
 			),  # Pass callbacks to controller
 			enable_memory=False,
-			use_vision=True,
+			use_vision=getattr(agent_llm, 'supports_vision', True),
 			max_failures=10,
 		)
 
