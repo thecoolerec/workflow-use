@@ -882,6 +882,29 @@ class DeterministicWorkflowConverter:
 				print(f'⚠️  Unknown action type: {action_type} - skipping')
 			return None
 
+	def ensure_terminal_extract(self, steps: List[Dict[str, Any]], task: str) -> List[Dict[str, Any]]:
+		"""Ensure deterministic workflows satisfy the schema's terminal extraction invariant.
+
+		Browser Use commonly finishes read-only tasks with a `done` action carrying the
+		final answer. `done` is not a replayable browser action, so it is intentionally
+		not converted. The workflow schema, however, requires the replayable workflow to
+		end with an extraction step. Synthesize that extraction from the original task
+		only when the recorded actions did not already contain one.
+		"""
+		if steps and steps[-1].get('type') in {'extract', 'extract_page_content'}:
+			return steps
+
+		steps.append(
+			{
+				'type': 'extract_page_content',
+				'goal': task,
+				'description': f'Extract final result for task: {task}',
+				'expected_outcome': 'Extract the requested result from the final page state',
+			}
+		)
+		print('   ✅ Added terminal extract step from original task')
+		return steps
+
 	def create_workflow_definition(
 		self,
 		name: str,
