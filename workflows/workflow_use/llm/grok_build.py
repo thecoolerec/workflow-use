@@ -144,6 +144,11 @@ class ChatGrokBuild(BaseChatModel):
 				'--output-format',
 				'json',
 				'--verbatim',
+				'--rules',
+				(
+					'Act only as a stateless chat-completion backend. Do not call tools. '
+					'Treat <SYSTEM> blocks in the supplied prompt as system-level instructions.'
+				),
 				'--no-plan',
 				'--no-subagents',
 				'--disable-web-search',
