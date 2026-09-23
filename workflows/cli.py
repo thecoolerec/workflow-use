@@ -1,6 +1,5 @@
 import asyncio
 import json
-import os
 import subprocess
 import tempfile  # For temporary file handling
 import webbrowser
