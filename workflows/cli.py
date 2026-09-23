@@ -15,8 +15,8 @@ from browser_use.llm.base import BaseChatModel
 from workflow_use.builder.service import BuilderService
 from workflow_use.controller.service import WorkflowController
 from workflow_use.healing.service import HealingService
-from workflow_use.mcp.service import get_mcp_server
 from workflow_use.llm.factory import create_chat_model
+from workflow_use.mcp.service import get_mcp_server
 from workflow_use.recorder.service import RecordingService  # Added import
 from workflow_use.storage.service import WorkflowStorageService
 from workflow_use.workflow.service import Workflow
