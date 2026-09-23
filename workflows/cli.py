@@ -1355,7 +1355,7 @@ def run_workflow_no_ai_command(
 		False,
 		'--enable-extraction',
 		'-e',
-		help='Enable AI-powered extraction steps (requires OpenAI API key for extraction steps only)',
+		help='Enable AI-powered extraction steps (initializes the default Browser Use LLM only for extraction)',
 	),
 	use_cloud: bool = typer.Option(False, help='Use Browser-Use Cloud browser'),
 ):
@@ -1372,29 +1372,18 @@ def run_workflow_no_ai_command(
 		typer.echo()  # Add space
 
 		try:
-			# Instantiate Browser for the Workflow instance
 			browser = Browser(use_cloud=use_cloud)
-			# Create a dummy LLM instance since it's required by the constructor but won't be used for interactions
-			dummy_llm = None
 			extraction_llm = None
 
-			try:
-				from browser_use.llm import ChatBrowserUse
-
-				dummy_llm = ChatBrowserUse(model='bu-latest')
-				if enable_extraction:
-					extraction_llm = ChatBrowserUse(model='bu-latest')
-					typer.secho('AI extraction enabled - will use LLM for extraction steps only.', fg=typer.colors.BLUE)
-			except Exception as e:
-				if enable_extraction:
-					typer.secho(f'Warning: Could not initialize LLM for extraction: {e}', fg=typer.colors.YELLOW)
-					typer.secho('Continuing with basic extraction fallback...', fg=typer.colors.YELLOW)
+			if enable_extraction:
+				_, extraction_llm = _get_default_llms()
+				typer.secho('AI extraction enabled - will use LLM for extraction steps only.', fg=typer.colors.BLUE)
 
 			workflow_obj = Workflow.load_from_file(
 				str(workflow_path),
 				browser=browser,
-				llm=dummy_llm,  # Won't be used in run_with_no_ai for interactions
-				page_extraction_llm=extraction_llm,  # Will be used for extraction steps if enabled
+				llm=None,
+				page_extraction_llm=extraction_llm,
 			)
 		except Exception as e:
 			typer.secho(f'Error loading workflow: {e}', fg=typer.colors.RED)
@@ -1873,12 +1862,14 @@ def run_workflow_csv_command(
 			browser = Browser(use_cloud=use_cloud)
 
 			dummy_llm = None
-			if use_ai and llm_instance:
-				dummy_llm = llm_instance
-			elif use_ai:
-				typer.secho(
-					'Warning: AI execution requested but no LLM available. Falling back to semantic mode.', fg=typer.colors.YELLOW
-				)
+			if use_ai:
+				try:
+					dummy_llm, _ = _get_default_llms()
+				except Exception as e:
+					typer.secho(
+						f'Warning: AI execution requested but LLM initialization failed: {e}. Falling back to semantic mode.',
+						fg=typer.colors.YELLOW,
+					)
 
 			workflow_obj = Workflow.load_from_file(
 				str(workflow_path),
@@ -2319,9 +2310,14 @@ def generate_csv_template_command(
 @app.command(name='generate-workflow')
 def generate_workflow_from_task(
 	task: str = typer.Argument(..., help='The task to automate (e.g., "Fill out the contact form")'),
-	agent_model: str = typer.Option('gpt-4.1-mini', help='Model for browser automation'),
-	extraction_model: str = typer.Option('gpt-4.1-mini', help='Model for page extraction'),
-	workflow_model: str = typer.Option('gpt-4.1', help='Model for workflow generation'),
+	provider: str = typer.Option(
+		'browser-use',
+		'--provider',
+		help='LLM provider for generation: browser-use or grok-build',
+	),
+	agent_model: str | None = typer.Option(None, help='Model for browser automation (provider default if omitted)'),
+	extraction_model: str | None = typer.Option(None, help='Model for page extraction (provider default if omitted)'),
+	workflow_model: str | None = typer.Option(None, help='Model for workflow generation (provider default if omitted)'),
 	save_to_storage: bool = typer.Option(True, help='Save workflow to storage database'),
 	output_file: Path | None = typer.Option(None, help='Optional: Save to specific file path'),
 	use_cloud: bool = typer.Option(False, help='Use Browser-Use Cloud browser'),
@@ -2337,23 +2333,32 @@ def generate_workflow_from_task(
 	Example:
 	  python cli.py generate-workflow "Fill out the contact form on example.com"
 	"""
-	if not healing_service:
-		typer.secho('Error: HealingService not initialized. Cannot generate workflow.', fg=typer.colors.RED)
-		raise typer.Exit(code=1)
-
 	typer.echo()
 	typer.secho('🤖 GENERATION MODE: Creating workflow from task', fg=typer.colors.CYAN, bold=True)
 	typer.echo(f'Task: {typer.style(task, fg=typer.colors.YELLOW)}')
 	typer.echo()
 
-	# Initialize LLMs
-	agent_llm = ChatBrowserUse(model='bu-latest')
-	extraction_llm = ChatBrowserUse(model='bu-latest')
+	try:
+		agent_llm = create_chat_model(provider, agent_model)
+		extraction_llm = create_chat_model(provider, extraction_model)
+		workflow_llm = create_chat_model(provider, workflow_model)
+	except Exception as e:
+		typer.secho(f'Error initializing provider "{provider}": {e}', fg=typer.colors.RED)
+		raise typer.Exit(code=1)
+
+	provider_normalized = provider.strip().lower().replace('_', '-')
+	use_deterministic_conversion = provider_normalized in {'grok-build', 'grok'}
+	healing_service = HealingService(
+		llm=workflow_llm,
+		use_deterministic_conversion=use_deterministic_conversion,
+	)
 
 	typer.echo('Starting browser automation to complete the task...')
-	typer.echo(f'  Agent Model: {agent_model}')
-	typer.echo(f'  Extraction Model: {extraction_model}')
-	typer.echo(f'  Workflow Model: {workflow_model}')
+	typer.echo(f'  Provider: {provider}')
+	typer.echo(f'  Agent Model: {agent_llm.name}')
+	typer.echo(f'  Extraction Model: {extraction_llm.name}')
+	typer.echo(f'  Workflow Model: {workflow_llm.name}')
+	typer.echo(f'  Conversion: {"deterministic" if use_deterministic_conversion else "LLM-based"}')
 	typer.echo(f'  Browser: {"☁️  Cloud" if use_cloud else "🖥️  Local"}')
 	typer.echo()
 
@@ -2464,8 +2469,10 @@ def run_stored_workflow(
 	  python cli.py run-stored-workflow <workflow-id>
 	  python cli.py run-stored-workflow <workflow-id> --prompt "Fill with test data"
 	"""
-	if not llm_instance:
-		typer.secho('Error: LLM not initialized.', fg=typer.colors.RED)
+	try:
+		llm_instance, page_extraction_llm = _get_default_llms()
+	except Exception as e:
+		typer.secho(f'LLM initialization failed: {e}', fg=typer.colors.RED)
 		raise typer.Exit(code=1)
 
 	# Load workflow from storage
