@@ -35,6 +35,54 @@ python cli.py run-workflow-no-ai my_workflow.json
 # Enter value for repo_name (required, type: string): browser-use
 ```
 
+### 4. Generate with your logged-in Grok Build account
+
+A recent Grok Build CLI can be used as the Browser Use model backend without an
+OpenAI, Browser Use, or xAI API key. The adapter reuses Grok Build's existing
+local OAuth login.
+
+First verify Grok Build headless mode works:
+
+```bash
+grok -p "Reply with exactly OK" --output-format json
+```
+
+Then generate a deterministic workflow:
+
+```bash
+uv run python cli.py generate-workflow \
+  "Open example.com and collect the requested data" \
+  --provider grok-build
+```
+
+You can optionally choose a Grok model explicitly:
+
+```bash
+uv run python cli.py generate-workflow \
+  "Your browser task" \
+  --provider grok-build \
+  --agent-model grok-4.6 \
+  --extraction-model grok-4.6 \
+  --workflow-model grok-4.6
+```
+
+Grok Build is used only while learning/generating the workflow. Replay stays
+deterministic:
+
+```bash
+uv run python cli.py run-workflow-no-ai storage/workflows/<workflow-id>.workflow.json
+```
+
+The first Grok Build adapter intentionally runs Browser Use in DOM-only mode
+(no screenshots) and uses Grok Build's `--json-schema` structured output support.
+If your Grok Build version does not support `--json-schema`, update Grok Build.
+
+> **Current extraction limitation:** `run-workflow-no-ai` itself makes no LLM
+> calls, but the upstream deterministic executor does not yet compile semantic
+> `ExtractStep` goals into field selectors. Without `--enable-extraction`, an
+> extract step falls back to raw/basic page text. Compiling learned extraction
+> rules into deterministic selectors is a separate follow-up.
+
 ---
 
 ## Key Features
