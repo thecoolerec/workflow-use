@@ -2350,6 +2350,7 @@ def generate_workflow_from_task(
 	healing_service = HealingService(
 		llm=workflow_llm,
 		use_deterministic_conversion=use_deterministic_conversion,
+		enable_variable_extraction=not use_deterministic_conversion,
 	)
 
 	typer.echo('Starting browser automation to complete the task...')
