@@ -151,6 +151,7 @@ class ChatGrokBuild(BaseChatModel):
 				),
 				'--no-plan',
 				'--no-subagents',
+				'--no-ask-user',
 				'--disable-web-search',
 				'--max-turns',
 				str(self.max_turns),
@@ -255,7 +256,10 @@ class ChatGrokBuild(BaseChatModel):
 			completion = str(data.get('text') or '')
 			return ChatInvokeCompletion(completion=completion, usage=usage, stop_reason=stop_reason)
 
-		structured = data.get('structured_output') or data.get('structuredOutput')
+		if 'structured_output' in data:
+			structured = data['structured_output']
+		else:
+			structured = data.get('structuredOutput')
 		if structured is None:
 			text = str(data.get('text') or '')
 			try:
