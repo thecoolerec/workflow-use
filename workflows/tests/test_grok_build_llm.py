@@ -1,8 +1,7 @@
 import unittest
 
-from pydantic import BaseModel
-
 from browser_use.llm.messages import UserMessage
+from pydantic import BaseModel
 from workflow_use.llm.factory import create_chat_model
 from workflow_use.llm.grok_build import ChatGrokBuild
 
