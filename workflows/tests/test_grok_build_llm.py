@@ -14,7 +14,7 @@ class StubGrokBuild(ChatGrokBuild):
 	async def _invoke_cli(self, prompt, schema):
 		return {
 			'text': '',
-			'structured_output': {'value': 'ok'},
+			'structuredOutput': {'value': 'ok'},
 			'stopReason': 'end_turn',
 			'usage': {
 				'input_tokens': 10,
